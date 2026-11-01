@@ -33,6 +33,13 @@ export function TracksStep({ draft, errors, update }: StepProps) {
               <SelectField label="Language" required value={t.language} onChange={(v) => setTrack(i, 'language', v)} options={LANGUAGES} error={e('language')} />
               <Segmented label="Explicit content" name={`explicit-${i}`} required value={t.explicit} onChange={(v) => setTrack(i, 'explicit', v)} options={['Yes', 'No']} error={e('explicit')} />
             </div>
+            <h4 className="subhead-sm">Credits <span className="optional">optional</span></h4>
+            <div className="grid-2">
+              <TextField label="Songwriter" value={t.songwriter} onChange={(v) => setTrack(i, 'songwriter', v)} error={e('songwriter')} />
+              <TextField label="Composer" value={t.composer} onChange={(v) => setTrack(i, 'composer', v)} error={e('composer')} />
+              <TextField label="Lyricist" value={t.lyricist} onChange={(v) => setTrack(i, 'lyricist', v)} error={e('lyricist')} />
+              <TextField label="Producer" value={t.producer} onChange={(v) => setTrack(i, 'producer', v)} error={e('producer')} />
+            </div>
             <TextArea label="Lyrics" value={t.lyrics} onChange={(v) => setTrack(i, 'lyrics', v)} error={e('lyrics')} rows={4} hint="Optional." />
           </section>
         );

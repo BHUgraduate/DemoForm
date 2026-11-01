@@ -12,7 +12,7 @@ export interface UploadedMeta {
 
 export interface TrackDraft {
   title: string; version: string; trackNumber: number; primaryArtist: string; featuredArtists: string;
-  isrc: string; language: string; explicit: string; lyrics: string;
+  isrc: string; language: string; explicit: string; songwriter: string; composer: string; lyricist: string; producer: string; lyrics: string;
 }
 
 export interface Draft {
@@ -30,18 +30,19 @@ export interface Draft {
   audio: UploadedMeta | null;
   artwork: UploadedMeta | null;
   stores: StoreName[];
+  otherPlatforms: string;
   rights: { ownsRights: boolean; infoAccurate: boolean; authorizeProcessing: boolean };
 }
 
 export const newTrack = (n: number, primaryArtist = ''): TrackDraft => ({
-  title: '', version: 'Original', trackNumber: n, primaryArtist, featuredArtists: '', isrc: '', language: '', explicit: '', lyrics: '',
+  title: '', version: 'Original', trackNumber: n, primaryArtist, featuredArtists: '', isrc: '', language: '', explicit: '', songwriter: '', composer: '', lyricist: '', producer: '', lyrics: '',
 });
 
 export const emptyDraft = (): Draft => ({
   artist: { legalName: '', displayName: '', email: '', phone: '', country: '', state: '', city: '', artistType: '', instagram: '', youtube: '', spotifyUrl: '', appleMusicUrl: '' },
   release: { releaseType: '', title: '', primaryArtist: '', featuringArtists: '', genre: '', subgenre: '', language: '', explicit: '', releaseDate: '', originalRelease: '', previouslyReleased: '', previousReleaseDate: '', upc: '', songwriters: '', composers: '', lyricists: '', producers: '', copyrightOwner: '', publishingInfo: '' },
   tracks: [newTrack(1)],
-  audio: null, artwork: null, stores: [],
+  audio: null, artwork: null, stores: [], otherPlatforms: '',
   rights: { ownsRights: false, infoAccurate: false, authorizeProcessing: false },
 });
 
@@ -50,12 +51,12 @@ export function toPayload(d: Draft) {
   return {
     artist: d.artist, release: d.release, tracks: d.tracks,
     files: { audioFileId: d.audio?.id ?? '', artworkFileId: d.artwork?.id ?? '' },
-    stores: d.stores, rights: d.rights,
+    stores: d.stores, otherPlatforms: d.otherPlatforms, rights: d.rights,
   };
 }
 
 /* Autosave: a convenience draft in this browser only. The *submission* always goes to the backend. */
-const KEY = 'soundlane-demo-draft-v1';
+const KEY = 'soundlane-demo-draft-v2';
 export function loadDraft(): { draft: Draft; step: number } | null {
   try {
     const raw = localStorage.getItem(KEY);

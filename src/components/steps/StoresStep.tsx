@@ -1,4 +1,5 @@
 import { STORES } from '../../../shared/schema';
+import { TextField } from '../Field';
 import type { StepProps } from './types';
 
 const MARK: Record<string, string> = { Spotify: 'Sp', 'Apple Music': 'Ap', 'YouTube Music': 'Yt', 'Amazon Music': 'Am', Deezer: 'Dz', TikTok: 'Tt', 'Instagram / Meta': 'Ig', Tidal: 'Td', Pandora: 'Pa' };
@@ -29,6 +30,9 @@ export function StoresStep({ draft, errors, update }: StepProps) {
         })}
       </div>
       {errors['stores'] && <p className="err" role="alert">{errors['stores']}</p>}
+      <div style={{ marginTop: 24 }}>
+        <TextField label="Other platforms" value={draft.otherPlatforms} onChange={(v) => update((d) => ({ ...d, otherPlatforms: v }))} error={errors['otherPlatforms']} hint="Optional — anything not listed above (e.g. regional services)." maxLength={200} />
+      </div>
     </>
   );
 }

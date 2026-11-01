@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
 
 export function Logo() {
   return (
@@ -10,14 +11,20 @@ export function Logo() {
 }
 
 export function SiteLayout() {
+  const { user, logout } = useAuth();
+  const nav = useNavigate();
   return (
     <>
       <header className="topbar">
         <div className="wrap topbar-in">
           <Logo />
           <nav aria-label="Primary">
-            <NavLink to="/distribute">Distribute</NavLink>
-            <NavLink to="/admin" className="admin-link">Admin <span className="pill">demo</span></NavLink>
+            {user?.role !== 'admin' && <NavLink to="/distribute">Distribute</NavLink>}
+            {user && user.role !== 'admin' && <NavLink to="/dashboard">My Releases</NavLink>}
+            {user?.role === 'admin' && <NavLink to="/admin" className="admin-link">Admin <span className="pill">demo</span></NavLink>}
+            {user
+              ? <button type="button" className="navbtn" onClick={async () => { await logout(); nav('/'); }}>Sign out</button>
+              : <NavLink to="/login">Sign in</NavLink>}
           </nav>
         </div>
       </header>

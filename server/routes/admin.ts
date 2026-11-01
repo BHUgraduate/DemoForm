@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { STATUSES } from '../../shared/schema.ts';
+import { STATUSES, sanitizeText } from '../../shared/schema.ts';
+import { config } from '../config.ts';
 import type { Deps } from '../app.ts';
 import { buildCsv, buildWorkbook, exportFilename } from '../export/xlsx.ts';
 
 /**
- * DEMO ADMIN API — intentionally unauthenticated so the client walkthrough is frictionless.
- * PRODUCTION: put every route here behind real authentication + role-based authorisation + audit logging.
+ * Admin API. Mounted behind requireAdmin (session cookie + role). Demo-grade: no audit log, MFA or per-admin permissions.
  */
-export function adminRoutes({ files, releases }: Deps) {
+export function adminRoutes({ files, releases, sync }: Deps) {
   const router = Router();
 
   const q = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : undefined);
@@ -50,11 +50,24 @@ export function adminRoutes({ files, releases }: Deps) {
   });
 
   router.patch('/releases/:id/status', async (req, res) => {
-    const parsed = z.object({ status: z.enum(STATUSES) }).safeParse(req.body);
+    const parsed = z.object({ status: z.enum(STATUSES), adminNote: z.string().max(1000).optional() }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ success: false, message: 'Invalid status.' });
-    const updated = await releases.updateStatus(req.params.id, parsed.data.status);
+    const { status } = parsed.data;
+    const note = parsed.data.adminNote === undefined ? undefined : sanitizeText(parsed.data.adminNote);
+    const updated = await releases.update(req.params.id, (r) =>
+      r.status === status && (note === undefined || note === r.adminNote)
+        ? null
+        : { ...r, status, adminNote: note ?? r.adminNote, updatedAt: new Date().toISOString(), googleSheetSyncStatus: r.isDemoData ? 'skipped' : sync.enabled ? 'pending' : 'disabled' });
     if (!updated) return res.status(404).json({ success: false, message: 'Submission not found.' });
-    res.json({ success: true, release: updated });
+    // Database is the record of truth for this edit; mirror it into the sheet right away (poller retries on failure).
+    await sync.push();
+    res.json({ success: true, release: (await releases.get(req.params.id)) ?? updated });
+  });
+
+  router.get('/sheets', (_req, res) => res.json({ success: true, sheets: { ...sync.state, url: config.sheets.url || null, worksheet: config.sheets.worksheetName, pollIntervalMs: config.sheets.pollIntervalMs } }));
+  router.post('/sheets/sync', async (_req, res) => {
+    await sync.poll('manual');
+    res.json({ success: true, sheets: { ...sync.state, url: config.sheets.url || null, worksheet: config.sheets.worksheetName, pollIntervalMs: config.sheets.pollIntervalMs } });
   });
 
   // Serves the stored upload for preview/download. Looked up by submission, never by a client-supplied path.

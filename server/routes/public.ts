@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import { ARTWORK_EXTENSIONS, AUDIO_EXTENSIONS, flattenIssues, releaseSubmissionSchema, type ReleaseRecord, type SubmitResponse } from '../../shared/schema.ts';
+import { ARTWORK_EXTENSIONS, AUDIO_EXTENSIONS, INITIAL_STATUS, flattenIssues, releaseSubmissionSchema, type ReleaseRecord, type SubmitResponse } from '../../shared/schema.ts';
+import { requireUser } from '../auth/middleware.ts';
 import type { Deps } from '../app.ts';
 import { sanitizeText } from '../../shared/schema.ts';
 import { sniffAudio, sniffImage } from '../storage/fileSniff.ts';
@@ -12,7 +13,7 @@ const fail = (res: Response, status: number, message: string, fieldErrors?: Reco
 
 const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
 
-export function publicRoutes({ files, releases }: Deps) {
+export function publicRoutes({ files, releases, sync }: Deps) {
   const router = Router();
   const memory = multer.memoryStorage();
   const uploadAudio = multer({ storage: memory, limits: { fileSize: config.maxAudioBytes, files: 1 } }).single('file');
@@ -57,10 +58,10 @@ export function publicRoutes({ files, releases }: Deps) {
     };
   }
 
-  router.post('/uploads/audio', runUpload('audio'));
-  router.post('/uploads/artwork', runUpload('artwork'));
+  router.post('/uploads/audio', requireUser, runUpload('audio'));
+  router.post('/uploads/artwork', requireUser, runUpload('artwork'));
 
-  router.post('/releases', async (req, res) => {
+  router.post('/releases', requireUser, async (req, res) => {
     const parsed = releaseSubmissionSchema.safeParse(req.body);
     if (!parsed.success) {
       return fail(res, 400, 'Some fields need your attention.', flattenIssues(parsed.error.issues));
@@ -82,19 +83,36 @@ export function publicRoutes({ files, releases }: Deps) {
       id,
       createdAt: now,
       updatedAt: now,
-      status: 'Submitted',
+      status: INITIAL_STATUS,
+      userId: req.user!.id, // from the session — never from the request body
+      adminNote: '',
+      googleSheetRow: null,
+      googleSheetLastSyncedStatus: null,
+      googleSheetLastSyncedNote: '',
+      googleSheetSyncStatus: sync.enabled ? 'pending' : 'disabled',
       audio: strip(audio),
       artwork: strip(artwork),
       isDemoData: false,
     }));
+    // Mirror into the Google Sheet. The submission is already safely stored; a Sheets outage only leaves it 'failed' → retried by the poller.
+    await sync.push();
     res.status(201).json({ success: true, submissionId: record.id, status: record.status, message: 'Release submitted successfully' } satisfies SubmitResponse);
   });
 
-  // Minimal public receipt for the confirmation screen (no personal data beyond what the artist just typed).
-  router.get('/releases/:id', async (req, res) => {
-    const r = await releases.get(req.params.id);
-    if (!r) return fail(res, 404, 'Submission not found.');
-    res.json({ success: true, submission: { id: r.id, status: r.status, createdAt: r.createdAt, title: r.release.title, releaseType: r.release.releaseType, artist: r.artist.displayName } });
+  // The signed-in artist's own releases (what the user dashboard polls). Never includes other users' data.
+  const view = (r: ReleaseRecord) => ({
+    id: r.id, title: r.release.title, releaseType: r.release.releaseType, genre: r.release.genre, artist: r.artist.displayName,
+    status: r.status, adminNote: r.adminNote, createdAt: r.createdAt, updatedAt: r.updatedAt, trackCount: r.tracks.length, stores: r.stores,
+  });
+  router.get('/my/releases', requireUser, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, releases: (await releases.listByUser(req.user!.id)).map(view) });
+  });
+  router.get('/my/releases/:id', requireUser, async (req, res) => {
+    const r = await releases.get(String(req.params.id));
+    if (!r || r.userId !== req.user!.id) return fail(res, 404, 'Submission not found.');
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, submission: view(r) });
   });
 
   return router;

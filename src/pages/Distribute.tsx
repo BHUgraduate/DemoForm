@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
 import { artistSchema, releaseSchema, releaseSubmissionSchema, rightsSchema, storesSchema, tracksSchema } from '../../shared/schema';
 import { ApiError, submitRelease } from '../lib/api';
 import { clearDraft, emptyDraft, loadDraft, saveDraft, toPayload, type Draft } from '../lib/draft';
@@ -51,8 +52,13 @@ function stepOfPath(path: string): number {
 
 export default function Distribute() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const restored = useMemo(loadDraft, []);
-  const [draft, setDraft] = useState<Draft>(restored?.draft ?? emptyDraft());
+  const [draft, setDraft] = useState<Draft>(() => {
+    const d = restored?.draft ?? emptyDraft();
+    // Convenience: the signed-in artist's name/email are the obvious defaults.
+    return { ...d, artist: { ...d.artist, email: d.artist.email || user?.email || '', legalName: d.artist.legalName || user?.name || '' } };
+  });
   const [step, setStep] = useState(Math.min(restored?.step ?? 0, LAST));
   const [errors, setErrors] = useState<Errors>({});
   const [showRestored, setShowRestored] = useState(!!restored && restored.step > 0);
@@ -104,6 +110,7 @@ export default function Distribute() {
       clearDraft();
       nav(`/submitted/${res.submissionId}`, { replace: true });
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) { setBanner('Your session expired. Your draft is saved — please sign in again.'); setSubmitting(false); return; }
       if (e instanceof ApiError && e.fieldErrors && Object.keys(e.fieldErrors).length) {
         const first = Math.min(...Object.keys(e.fieldErrors).map(stepOfPath));
         setErrors(e.fieldErrors); setStep(first);

@@ -19,7 +19,9 @@ export interface ReleaseRepository {
   create(build: (id: string) => ReleaseRecord): Promise<ReleaseRecord>;
   get(id: string): Promise<ReleaseRecord | null>;
   list(filters?: ReleaseFilters): Promise<ReleaseRecord[]>;
-  updateStatus(id: string, status: Status): Promise<ReleaseRecord | null>;
+  /** Atomic read-modify-write. `fn` returns the new record, or null to leave the record unchanged. */
+  update(id: string, fn: (current: ReleaseRecord) => ReleaseRecord | null): Promise<ReleaseRecord | null>;
+  listByUser(userId: string): Promise<ReleaseRecord[]>;
   findDuplicate(email: string, title: string, releaseType: string): Promise<ReleaseRecord | null>;
   stats(): Promise<Stats>;
   count(): Promise<number>;
@@ -100,18 +102,23 @@ export class JsonReleaseRepository implements ReleaseRepository {
     return applyFilters(await this.load(), filters);
   }
 
-  updateStatus(id: string, status: Status) {
+  update(id: string, fn: (current: ReleaseRecord) => ReleaseRecord | null) {
     return this.exclusive(async () => {
       const rows = await this.load();
       const idx = rows.findIndex((r) => r.id === id);
       if (idx < 0) return null;
-      const updated = { ...rows[idx], status, updatedAt: new Date().toISOString() };
+      const updated = fn(rows[idx]);
+      if (!updated) return rows[idx];
       const next = rows.slice();
       next[idx] = updated;
       await this.persist(next);
       this.cache = next;
       return updated;
     });
+  }
+
+  async listByUser(userId: string) {
+    return applyFilters((await this.load()).filter((r) => r.userId === userId), { sort: 'desc' });
   }
 
   async findDuplicate(email: string, title: string, releaseType: string) {
@@ -126,6 +133,9 @@ export class JsonReleaseRepository implements ReleaseRepository {
   async stats(): Promise<Stats> {
     const rows = await this.load();
     const n = (s: Status) => rows.filter((r) => r.status === s).length;
-    return { total: rows.length, submitted: n('Submitted'), underReview: n('Under Review'), approved: n('Approved'), rejected: n('Rejected') };
+    return {
+      total: rows.length, underReview: n('Under Review'), processing: n('Processing'), approved: n('Approved'),
+      rejected: n('Rejected'), needsChanges: n('Needs Changes'), completed: n('Completed'),
+    };
   }
 }
