@@ -1,5 +1,8 @@
 import path from 'node:path';
 
+// Load ./.env if present (Node >= 20.12). Real environment variables always win over the file.
+try { process.loadEnvFile(path.resolve('.env')); } catch { /* no .env file: use defaults / real env */ }
+
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
 const str = (v: string | undefined) => (v ?? '').trim();
 

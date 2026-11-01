@@ -4,6 +4,20 @@
 > **artist submits a release → backend + database → admin dashboard → Google Sheet → admin edits Status in the sheet → backend poller → database → artist dashboard.**
 > Docs: [`GOOGLE_SHEETS_SETUP.md`](GOOGLE_SHEETS_SETUP.md) · [`GOOGLE_SHEETS_ARCHITECTURE.md`](GOOGLE_SHEETS_ARCHITECTURE.md) · [`DEMO_ROADMAP.md`](DEMO_ROADMAP.md)
 
+## Quick start (VS Code)
+
+Needs **Node.js 20.12 or newer** (`node -v`) and Git.
+
+1. **Clone & open:** `git clone https://github.com/BHUgraduate/DemoForm.git`, then *File → Open Folder…* (or `code DemoForm`).
+2. **Terminal → New Terminal**, then:
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. Open **http://localhost:5173**. Sign in with the demo logins below. Submit a release as the artist; watch it appear in `/admin` as the admin (use a private window for the second user).
+4. **Optional — Google Sheet control panel:** do [`GOOGLE_SHEETS_SETUP.md`](GOOGLE_SHEETS_SETUP.md), put the values in a `.env` file (copy `.env.example`; it is git-ignored), and **restart** `npm run dev`. The terminal prints `[GoogleSheets] Poller started`. Without it, everything works except the sheet.
+5. No Google account handy? Use the emulator below to rehearse the exact flow locally.
+
 ## Run it
 
 ```bash
