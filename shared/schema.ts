@@ -10,7 +10,10 @@ import { z } from 'zod';
 export const ARTIST_TYPES = ['Solo Artist', 'Band', 'Label', 'Producer', 'Other'] as const;
 export const RELEASE_TYPES = ['Single', 'EP', 'Album'] as const;
 export const TRACK_VERSIONS = ['Original', 'Remix', 'Live', 'Acoustic', 'Instrumental', 'Radio Edit', 'Other'] as const;
-export const STATUSES = ['Submitted', 'Under Review', 'Approved', 'Rejected'] as const;
+/** Allowed values for the Status column (Google Sheet dropdown) and the database. The cell TEXT is the source of truth. */
+export const STATUSES = ['Under Review', 'Approved', 'Rejected', 'Needs Changes', 'Processing', 'Completed'] as const;
+export const INITIAL_STATUS = 'Under Review' as const;
+export const SYNC_STATUSES = ['pending', 'synced', 'failed', 'disabled', 'skipped'] as const;
 export const STORES = [
   'Spotify', 'Apple Music', 'YouTube Music', 'Amazon Music', 'Deezer', 'TikTok', 'Instagram / Meta', 'Tidal', 'Pandora',
 ] as const;
@@ -33,6 +36,7 @@ export type ArtistType = (typeof ARTIST_TYPES)[number];
 export type ReleaseType = (typeof RELEASE_TYPES)[number];
 export type Status = (typeof STATUSES)[number];
 export type StoreName = (typeof STORES)[number];
+export type SyncStatus = (typeof SYNC_STATUSES)[number];
 
 /* ───────────────────────── helpers ───────────────────────── */
 
@@ -121,6 +125,10 @@ export const trackSchema = z.object({
   ),
   language: required('Language', 100),
   explicit: yesNo,
+  songwriter: optional(200),
+  composer: optional(200),
+  lyricist: optional(200),
+  producer: optional(200),
   lyrics: optional(10000),
 });
 
@@ -159,6 +167,7 @@ export const releaseSubmissionSchema = z.object({
   tracks: tracksSchema,
   files: filesSchema,
   stores: storesSchema,
+  otherPlatforms: optional(200),
   rights: rightsSchema,
 });
 
@@ -183,7 +192,19 @@ export interface StoredFile {
 }
 
 export interface ReleaseRecord extends SubmissionPayload {
-  id: string; // REL-2026-00001
+  /** The stable submission ID (REL-2026-00001). This is also the Google Sheet synchronisation key. */
+  id: string;
+  /** Owner (authenticated artist). 'seed' for fictional sample rows. */
+  userId: string;
+  /** Message from the admin (Admin Note column in the sheet / admin dashboard). Shown to the artist. */
+  adminNote: string;
+  /** 1-based row in the Google Sheet. A cache only — rows are always re-located by Submission ID. */
+  googleSheetRow: number | null;
+  /** The (status, note) pair last known to be identical in DB and Sheet. Used to tell WHO changed what. */
+  googleSheetLastSyncedStatus: Status | null;
+  googleSheetLastSyncedNote: string;
+  googleSheetSyncStatus: SyncStatus;
+  googleSheetLastError?: string;
   createdAt: string;
   updatedAt: string;
   status: Status;
@@ -195,11 +216,15 @@ export interface ReleaseRecord extends SubmissionPayload {
 
 export interface Stats {
   total: number;
-  submitted: number;
   underReview: number;
+  processing: number;
   approved: number;
   rejected: number;
+  needsChanges: number;
+  completed: number;
 }
+
+export interface PublicUser { id: string; name: string; email: string; role: 'artist' | 'admin' }
 
 export interface SubmitResponse {
   success: boolean;

@@ -5,10 +5,18 @@ import type { FileStorage } from './storage/fileStorage.ts';
 import type { ReleaseRepository } from './storage/releaseRepository.ts';
 import { publicRoutes } from './routes/public.ts';
 import { adminRoutes } from './routes/admin.ts';
+import { authRoutes } from './routes/auth.ts';
+import { requireAdmin, sessionLoader } from './auth/middleware.ts';
+import type { JsonUserRepository } from './storage/userRepository.ts';
+import type { SheetsSync } from './sheets/sync.ts';
 
 export interface Deps {
   files: FileStorage;
   releases: ReleaseRepository;
+  users: JsonUserRepository;
+  sync: SheetsSync;
+  /** Session-signing secret (resolved at startup; a function so it can be filled in lazily). */
+  secret: () => string;
 }
 
 export function createApp(deps: Deps) {
@@ -17,8 +25,10 @@ export function createApp(deps: Deps) {
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  app.use('/api', sessionLoader(deps.users, deps.secret));
+  app.use('/api/auth', authRoutes(deps));
+  app.use('/api/admin', requireAdmin, adminRoutes(deps));
   app.use('/api', publicRoutes(deps));
-  app.use('/api/admin', adminRoutes(deps));
   app.use('/api', (_req, res) => res.status(404).json({ success: false, message: 'Not found.' }));
 
   // Production: serve the built React app and fall back to index.html for client-side routes.

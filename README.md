@@ -1,81 +1,92 @@
-# Soundlane — music release submission demo
+# Soundlane — music release submission demo with a Google Sheet control panel
 
-> **This is a client demonstration, not a distributor.** It proves one workflow end to end:
-> **artist form → real API → persisted record → admin view → Excel export.**
-> See [`DEMO_ROADMAP.md`](DEMO_ROADMAP.md) for what a commercial platform would still need.
+> **A client demonstration, not a distributor.** It proves this loop end to end:
+> **artist submits a release → backend + database → admin dashboard → Google Sheet → admin edits Status in the sheet → backend poller → database → artist dashboard.**
+> Docs: [`GOOGLE_SHEETS_SETUP.md`](GOOGLE_SHEETS_SETUP.md) · [`GOOGLE_SHEETS_ARCHITECTURE.md`](GOOGLE_SHEETS_ARCHITECTURE.md) · [`DEMO_ROADMAP.md`](DEMO_ROADMAP.md)
+
+## Quick start (VS Code)
+
+Needs **Node.js 20.12 or newer** (`node -v`) and Git.
+
+1. **Clone & open:** `git clone https://github.com/BHUgraduate/DemoForm.git`, then *File → Open Folder…* (or `code DemoForm`).
+2. **Terminal → New Terminal**, then:
+   ```bash
+   npm install
+   npm run dev
+   ```
+3. Open **http://localhost:5173**. Sign in with the demo logins below. Submit a release as the artist; watch it appear in `/admin` as the admin (use a private window for the second user).
+4. **Optional — Google Sheet control panel:** do [`GOOGLE_SHEETS_SETUP.md`](GOOGLE_SHEETS_SETUP.md), put the values in a `.env` file (copy `.env.example`; it is git-ignored), and **restart** `npm run dev`. The terminal prints `[GoogleSheets] Poller started`. Without it, everything works except the sheet.
+5. No Google account handy? Use the emulator below to rehearse the exact flow locally.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev          # UI on http://localhost:5173, API on http://localhost:3001
+cp .env.example .env     # optional; Google Sheets stays off until configured
+npm run dev              # UI http://localhost:5173, API http://localhost:3001
+# or single process:  npm run build && npm start   → http://localhost:3001
 ```
 
-Single-process production mode (what to use on a presentation laptop):
+Demo logins (shown on the sign-in page; set `SHOW_DEMO_LOGINS=false` to hide): `artist@example.com` / `artist-demo-123`, `admin@example.com` / `admin-demo-123`.
+Delete `data/` to reset. First start seeds 3 fictional sample releases (not synced to the sheet).
 
+### Rehearse without Google (local emulator)
 ```bash
-npm run build && npm start     # everything on http://localhost:3001
+npx tsx scripts/fake-sheets.ts &                                   # fake Sheets API on :4010
+GOOGLE_SHEETS_EMULATOR_URL=http://127.0.0.1:4010 GOOGLE_SHEETS_SPREADSHEET_ID=demo-sheet \
+GOOGLE_SHEETS_POLL_INTERVAL_MS=5000 npm start
+curl -XPOST localhost:4010/__control/set -H 'content-type: application/json' \
+     -d '{"id":"REL-2026-00004","column":"O","value":"Approved"}'   # "edit the sheet"
+curl localhost:4010/__control/dump                                   # "look at the sheet"
 ```
+With real Google, follow [`GOOGLE_SHEETS_SETUP.md`](GOOGLE_SHEETS_SETUP.md).
 
-First start inserts 3 fictional sample submissions (flagged `isDemoData`, shown with a "sample" tag). Set `DEMO_SEED=false` to skip. Delete the `data/` folder to reset. Copy `.env.example` to `.env` to change port / data dir / upload limits.
-
-Tests: `npm test` (API integration, incl. reading the generated `.xlsx` back) · `npm run typecheck`.
-Browser walkthrough: `NODE_PATH=$(npm root -g) node scripts/e2e-demo.cjs` (needs the server running; uses Playwright).
-
-## 2–5 minute demo script
-
-1. Open `/` → **Distribute Your Music**.
-2. Walk the 8 steps. Use `demo-assets/sample-track.wav` and `demo-assets/sample-cover.png` for the uploads (try a `.pdf` first to show the rejection).
-3. **Submit Release** → confirmation shows the generated ID (e.g. `REL-2026-00004`).
-4. **View Submission** (or open `/admin`) → the new row is at the top; click it to see every captured field, the stored cover, and an audio player.
-5. Change the status (Under Review / Approved…), try search + filters.
-6. **Export to Excel** → open the `.xlsx`; the new submission is a row with all columns.
+## Demo script
+1. Sign in as the artist → **Distribute Your Music** → 8 steps (samples in `demo-assets/`) → **Submit**. Confirmation shows the ID and **Under Review**.
+2. Sign in as admin (second browser/profile) → `/admin`: the release is there; **Open Google Sheet** opens the sheet; the **Sheet** column shows ● synced.
+3. In the Google Sheet change **Status** → *Approved* (try **Needs Changes** + an **Admin Note**).
+4. Wait one poll interval (`GOOGLE_SHEETS_POLL_INTERVAL_MS`; use `10000` live). The server log shows `status changed: Under Review → Approved`.
+5. The artist's **My Releases** page flips to **✓ Approved** by itself (refreshes every 10 s) and shows the admin message.
+6. Reverse direction: change status in `/admin` → the sheet cell updates; no loop.
 
 ## Routes
-
-| Frontend | |
+| UI | |
 |---|---|
-| `/` | Artist landing page |
-| `/distribute` | 8-step submission wizard (autosaves a draft in the browser) |
-| `/submitted/:id` | Confirmation (reads the receipt back from the API) |
-| `/admin` | **DEMO** dashboard: stat cards, search, filters, sort, exports |
-| `/admin/releases/:id` | Submission detail + status change |
+| `/` · `/login` | landing · sign in / register |
+| `/distribute` · `/submitted/:id` | release wizard · confirmation *(artist)* |
+| `/dashboard` | **My Releases** with live status + admin message *(artist)* |
+| `/admin` · `/admin/releases/:id` | dashboard, filters, exports, **Open Google Sheet**, **Sync now**, status + note editor *(admin)* |
 
 | API | |
 |---|---|
-| `POST /api/uploads/audio` · `/api/uploads/artwork` | multipart upload; type verified by file *contents*; returns file id + metadata |
-| `POST /api/releases` | validates, sanitises, generates `REL-YYYY-NNNNN`, stores → `201 {success, submissionId, message}` (`400` field errors, `409` duplicate) |
-| `GET /api/releases/:id` | minimal public receipt |
-| `GET /api/admin/stats` · `/releases` · `/releases/:id` | dashboard data (`?search&status&releaseType&genre&sort`) |
-| `PATCH /api/admin/releases/:id/status` | Submitted · Under Review · Approved · Rejected |
-| `GET /api/admin/releases/:id/files/audio\|artwork` | serves stored upload |
-| `GET /api/admin/export.xlsx` · `export.csv` | exports (respect current filters) |
+| `POST /api/auth/register · login · logout`, `GET /api/auth/me` | session cookie (HttpOnly, signed) |
+| `POST /api/uploads/audio · artwork` | multipart, content-verified *(artist)* |
+| `POST /api/releases` | validate → store (owner = session user, status **Under Review**) → mirror to sheet → `{success, submissionId, status}` |
+| `GET /api/my/releases[/:id]` | the signed-in artist's releases (what the dashboard polls) |
+| `GET /api/admin/releases[/:id] · stats` | admin data (`?search&status&releaseType&genre&sort`) |
+| `PATCH /api/admin/releases/:id/status` | `{status, adminNote?}` → DB → sheet |
+| `GET /api/admin/sheets` · `POST /api/admin/sheets/sync` | sync health · run a sync now |
+| `GET /api/admin/export.xlsx · export.csv` | file exports |
 
-## Architecture
+Statuses: **Under Review** (initial) · **Approved** · **Rejected** · **Needs Changes** · **Processing** · **Completed**.
 
+## Layout
 ```
-shared/schema.ts            zod schemas + types — used by BOTH client and server
-server/
-  app.ts, index.ts          Express app + bootstrap
-  routes/public.ts          uploads + POST /api/releases
-  routes/admin.ts           admin API + exports
-  storage/releaseRepository.ts   ReleaseRepository interface + JSON-file implementation
-  storage/fileStorage.ts         FileStorage interface + local-disk implementation
-  storage/fileSniff.ts           magic-byte checks, image dimensions
-  export/columns.ts, xlsx.ts     the 44 export columns; exceljs workbook; CSV
-  seed.ts                   fictional demo rows
-src/                        React + Vite UI (pages/, components/steps/, lib/)
+shared/schema.ts           zod schemas + types (client and server)
+server/sheets/             columns.ts (layout) · gateway.ts (Google client) · sync.ts (reconcile + poller)
+server/auth/, routes/      sessions, scrypt passwords, guards, API routes
+server/storage/            ReleaseRepository / UserRepository (JSON files) · FileStorage (local disk)
+src/                       React UI: pages/ (Login, Dashboard, Distribute, admin/…), components/, lib/
+tests/                     api.test.ts · sheets.test.ts (round trip) · helpers/fakeSheets.ts (Sheets API emulator)
+scripts/                   e2e-sheets.cjs (browser round trip) · fake-sheets.ts · make-demo-assets.mjs
 ```
 
-**Storage (demo):** `data/releases.json` (atomic write-then-rename, serialised writes) and `data/uploads/<uuid>.bin|json`. Client filenames never touch filesystem paths. To go to production, implement `ReleaseRepository` (Postgres/Supabase/Firestore) and `FileStorage` (S3/GCS) — no route changes needed.
+## Tests
+```bash
+npm test             # 14 API + round-trip tests (real Google client ↔ local emulator)
+npm run typecheck
+NODE_PATH=$(npm root -g) node scripts/e2e-sheets.cjs   # Playwright; needs fake-sheets + app running (see header of the script)
+```
 
-**Excel export:** `exceljs` builds a real `.xlsx` server-side: frozen header row + first column, styled header, autofilter, set column widths, true date cells (`yyyy-mm-dd hh:mm`), numeric track count / MB, multi-value fields comma-joined. Filename `music-distribution-submissions-YYYY-MM-DD.xlsx`. CSV export neutralises formula-looking text.
-
-## Intentionally mocked / demo-only
-
-- **No authentication** anywhere; `/admin` is clearly labelled DEMO and is not secure.
-- Store selection is saved but nothing is delivered to any store. No payments, royalties, ISRC/UPC issuing, rights verification or identity checks.
-- JSON file + local disk instead of a database and object storage; no virus scanning, rate limiting or CSRF protection.
-- One audio file per release (track metadata supports many tracks).
-- Seeded rows have metadata only — no audio/artwork bytes.
-- Browser `localStorage` is used **only** for the in-progress draft; submissions always go to the API.
+## Demo-only / not production
+JSON-file database and local-disk uploads; demo-grade accounts (no email verification, MFA, password reset); polling instead of push; no DSP delivery, payments, royalties, ISRC/UPC issuing or rights checks. See the architecture doc for the production hardening list.

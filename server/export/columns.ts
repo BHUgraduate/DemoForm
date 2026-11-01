@@ -49,7 +49,7 @@ export const COLUMNS: Column[] = [
   { header: 'Track Count', width: 12, kind: 'number', value: (r) => r.tracks.length },
   { header: 'Track Titles', width: 40, kind: 'text', value: (r) => join(r.tracks.map((t) => `${t.trackNumber}. ${t.title}${t.version !== 'Original' ? ` (${t.version})` : ''}`)) },
   { header: 'ISRCs', width: 30, kind: 'text', value: (r) => join(r.tracks.map((t) => t.isrc).filter(Boolean)) },
-  { header: 'Distribution Stores', width: 44, kind: 'text', value: (r) => join(r.stores) },
+  { header: 'Distribution Stores', width: 44, kind: 'text', value: (r) => join([...r.stores, ...(r.otherPlatforms ? [r.otherPlatforms] : [])]) },
   { header: 'Audio Filename', width: 28, kind: 'text', value: (r) => r.audio.originalName },
   { header: 'Audio MIME Type', width: 16, kind: 'text', value: (r) => r.audio.mimeType },
   { header: 'Audio Size (MB)', width: 15, kind: 'mb', value: (r) => r.audio.size },
@@ -57,6 +57,8 @@ export const COLUMNS: Column[] = [
   { header: 'Cover MIME Type', width: 16, kind: 'text', value: (r) => r.artwork.mimeType },
   { header: 'Cover Dimensions', width: 16, kind: 'text', value: (r) => (r.artwork.width && r.artwork.height ? `${r.artwork.width}x${r.artwork.height}` : '') },
   { header: 'Status', width: 14, kind: 'text', value: (r) => r.status },
+  { header: 'Admin Note', width: 36, kind: 'text', value: (r) => r.adminNote },
+  { header: 'Google Sheet Sync', width: 16, kind: 'text', value: (r) => r.googleSheetSyncStatus },
 ];
 
 /**

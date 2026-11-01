@@ -15,13 +15,15 @@ export default function AdminDetail() {
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState('');
+  const [note, setNote] = useState('');
+  const [pending, setPending] = useState('');
   const [artOk, setArtOk] = useState(true);
 
-  useEffect(() => { adminGet(id).then((x) => setR(x.release)).catch((e) => setErr(e.message)); }, [id]);
+  useEffect(() => { adminGet(id).then((x) => { setR(x.release); setNote(x.release.adminNote); setPending(x.release.status); }).catch((e) => setErr(e.message)); }, [id]);
 
-  async function changeStatus(status: string) {
+  async function save() {
     setSaving(true); setSaved(''); setErr('');
-    try { const x = await adminSetStatus(id, status); setR(x.release); setSaved(`Status updated to “${status}”.`); }
+    try { const x = await adminSetStatus(id, pending, note); setR(x.release); setSaved(`Saved: “${x.release.status}”. ${x.release.googleSheetSyncStatus === 'synced' ? 'Google Sheet updated.' : x.release.googleSheetSyncStatus === 'disabled' ? '' : 'Google Sheet sync will retry automatically.'}`); }
     catch (e) { setErr((e as Error).message); }
     finally { setSaving(false); }
   }
@@ -43,8 +45,12 @@ export default function AdminDetail() {
         <div className="status-box">
           <label htmlFor="status">Status</label>
           <div className="status-row"><StatusBadge status={r.status} />
-            <select id="status" value={r.status} disabled={saving} onChange={(e) => changeStatus(e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+            <select id="status" value={pending} disabled={saving} onChange={(e) => setPending(e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
           </div>
+          <label htmlFor="note">Admin note (shown to the artist)</label>
+          <textarea id="note" rows={2} maxLength={1000} value={note} disabled={saving} onChange={(e) => setNote(e.target.value)} />
+          <button className="btn primary small" onClick={save} disabled={saving || (pending === r.status && note === r.adminNote)}>{saving ? 'Saving…' : 'Save status'}</button>
+          <p className="fine">You can also change Status and Admin Note directly in the Google Sheet.</p>
         </div>
       </div>
       {saved && <div className="banner ok" role="status">{saved}</div>}
@@ -67,10 +73,10 @@ export default function AdminDetail() {
           </dl></Card>
           <Card title={`Tracks (${r.tracks.length})`}>
             <div className="table-wrap flat"><table className="data compact">
-              <thead><tr><th>#</th><th>Title</th><th>Version</th><th>Artist</th><th>Featured</th><th>ISRC</th><th>Language</th><th>Explicit</th></tr></thead>
+              <thead><tr><th>#</th><th>Title</th><th>Version</th><th>Artist</th><th>Featured</th><th>ISRC</th><th>Credits</th><th>Language</th><th>Explicit</th></tr></thead>
               <tbody>{r.tracks.map((t, i) => (
                 <tr key={i}><td data-label="#">{t.trackNumber}</td><td data-label="Title"><strong>{t.title}</strong></td><td data-label="Version">{t.version}</td><td data-label="Artist">{t.primaryArtist}</td>
-                  <td data-label="Featured">{dash(t.featuredArtists)}</td><td data-label="ISRC" className="mono">{dash(t.isrc)}</td><td data-label="Language">{t.language}</td><td data-label="Explicit">{t.explicit}</td></tr>
+                  <td data-label="Featured">{dash(t.featuredArtists)}</td><td data-label="ISRC" className="mono">{dash(t.isrc)}</td><td data-label="Credits">{[t.songwriter && `Writer: ${t.songwriter}`, t.composer && `Composer: ${t.composer}`, t.lyricist && `Lyrics: ${t.lyricist}`, t.producer && `Producer: ${t.producer}`].filter(Boolean).join(' · ') || '—'}</td><td data-label="Language">{t.language}</td><td data-label="Explicit">{t.explicit}</td></tr>
               ))}</tbody></table></div>
             {r.tracks.some((t) => t.lyrics) && r.tracks.filter((t) => t.lyrics).map((t, i) => <details key={i}><summary>Lyrics — {t.title}</summary><pre className="lyrics">{t.lyrics}</pre></details>)}
           </Card>
@@ -90,13 +96,13 @@ export default function AdminDetail() {
               <a className="btn small" href={`${base}/audio?download=1`}>Download audio</a>
             </> : <p className="fine">Audio bytes are not stored for sample rows.</p>}
           </Card>
-          <Card title="Distribution stores"><div className="chips">{r.stores.map((s) => <span className="chip" key={s}>{s}</span>)}</div></Card>
+          <Card title="Distribution stores"><div className="chips">{r.stores.map((s) => <span className="chip" key={s}>{s}</span>)}{r.otherPlatforms && <span className="chip">{r.otherPlatforms}</span>}</div></Card>
           <Card title="Rights declarations"><ul className="checks">
             <li className={r.rights.ownsRights ? 'yes' : 'no'}>Owns or controls distribution rights</li>
             <li className={r.rights.infoAccurate ? 'yes' : 'no'}>Information is accurate</li>
             <li className={r.rights.authorizeProcessing ? 'yes' : 'no'}>Authorizes processing</li>
           </ul></Card>
-          <Card title="Record"><dl><Row k="Created" v={formatDateTime(r.createdAt)} /><Row k="Last updated" v={formatDateTime(r.updatedAt)} /><Row k="Status" v={<StatusBadge status={r.status} />} /></dl></Card>
+          <Card title="Record"><dl><Row k="Created" v={formatDateTime(r.createdAt)} /><Row k="Last updated" v={formatDateTime(r.updatedAt)} /><Row k="Status" v={<StatusBadge status={r.status} />} /><Row k="Admin note" v={dash(r.adminNote)} /><Row k="Google Sheet" v={`${r.googleSheetSyncStatus}${r.googleSheetRow ? ` · row ${r.googleSheetRow}` : ''}`} />{r.googleSheetLastError && <Row k="Last sync error" v={r.googleSheetLastError} />}</dl></Card>
         </aside>
       </div>
     </div>
